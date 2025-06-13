@@ -1,25 +1,37 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { materialDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import "./Chat.css";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require("./Chat.css");
+
+let conversationId = "";
+
+type Message = { sender: string; text: string };
 
 function Chat() {
-  const [messages, setMessages] = useState([]);
+  useEffect(() => {
+    const init = async () => {
+      const response = await fetch("http://localhost:8000");
+      const { conversation_id } = await response.json();
+      conversationId = conversation_id;
+    }
+    init();
+  }, []);
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [darkTheme, setDarkTheme] = useState(false);
-  const messagesEndRef = useRef(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(scrollToBottom, [messages]);
+  useEffect(() => {
+    messagesEndRef.current!.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !conversationId) return;
 
     const userMessage = { sender: "user", text: input };
     setMessages((prevMessages) => [...prevMessages, userMessage]);
@@ -27,7 +39,7 @@ function Chat() {
     setIsTyping(true);
 
     try {
-      const response = await fetch("http://localhost:5000/chat", {
+      const response = await fetch(`http://localhost:8000/conversation/${conversationId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -35,39 +47,14 @@ function Chat() {
         body: JSON.stringify({ message: input }),
       });
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let botResponse = "";
+      const messageResponse = (await response.json()).response_message;
+
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        { sender: "bot", text: messageResponse }
+      ]);
 
       setIsTyping(false);
-
-      const processLine = (line) => {
-        if (line.startsWith("data: ")) {
-          const data = JSON.parse(line.slice(6));
-          botResponse += data.message;
-          setMessages((prevMessages) => {
-            const newMessages = [...prevMessages];
-            if (newMessages[newMessages.length - 1].sender === "bot") {
-              newMessages[newMessages.length - 1].text = botResponse;
-            } else {
-              newMessages.push({ sender: "bot", text: botResponse });
-            }
-            return newMessages;
-          });
-        } else if (line === "event: end") {
-          setIsTyping(false);
-        }
-      };
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n\n");
-
-        lines.forEach(processLine);
-      }
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -75,7 +62,7 @@ function Chat() {
 
   return (
     <div className={`chat-container ${darkTheme ? "dark-theme" : ""}`}>
-      <div className="glassy-transparent">
+      <div>
         <button className="darkBtn" onClick={() => setDarkTheme(!darkTheme)}>
           {!darkTheme ? "🌙" : "☀️"}
         </button>
@@ -88,7 +75,7 @@ function Chat() {
                 children={msg.text}
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  code({ node, inline, className, children, ...props }) {
+                  code({ inline, className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || "");
                     return !inline && match ? (
                       <SyntaxHighlighter

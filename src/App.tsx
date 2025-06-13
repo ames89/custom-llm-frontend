@@ -1,4 +1,5 @@
-import "./App.css";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require("./App.css");
 import Chat from "./components/Chat";
 
 function App() {
